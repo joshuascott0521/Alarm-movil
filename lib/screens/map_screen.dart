@@ -6,13 +6,20 @@ import 'package:latlong2/latlong.dart';
 
 import '../logic/arrival_checker.dart';
 import '../services/alarm_service.dart';
+import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key, required this.alarm, required this.location});
+  const MapScreen({
+    super.key,
+    required this.alarm,
+    required this.location,
+    required this.geocoding,
+  });
 
   final AlarmService alarm;
   final LocationService location;
+  final GeocodingService geocoding;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -23,6 +30,9 @@ class _MapScreenState extends State<MapScreen> {
   static const _fallbackCenter = LatLng(4.6097, -74.0817);
 
   final _mapController = MapController();
+  final _searchController = TextEditingController();
+  List<Place>? _results;
+  bool _searching = false;
   LatLng? _myPosition;
   LatLng? _destination;
   double _radius = 400;
@@ -40,6 +50,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _tracking?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -57,7 +68,37 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onMapTap(TapPosition _, LatLng point) {
     if (_isTracking) return;
-    setState(() => _destination = point);
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _destination = point;
+      _results = null;
+    });
+  }
+
+  Future<void> _search(String query) async {
+    query = query.trim();
+    if (query.isEmpty) return;
+    setState(() => _searching = true);
+    try {
+      final places = await widget.geocoding.search(query, near: _myPosition);
+      if (!mounted) return;
+      setState(() => _results = places);
+      if (places.isEmpty) _showMessage('No encontramos esa dirección.');
+    } catch (_) {
+      _showMessage('No se pudo buscar. Revisa tu conexión a internet.');
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _selectPlace(Place place) {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _destination = place.point;
+      _results = null;
+      _searchController.text = place.name;
+    });
+    _mapController.move(place.point, 16);
   }
 
   Future<void> _start() async {
@@ -188,13 +229,21 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ),
           Positioned(
+            left: 16,
             right: 16,
             top: 16,
-            child: FloatingActionButton.small(
-              heroTag: 'locate',
-              onPressed: _locateMe,
-              tooltip: 'Mi ubicación',
-              child: const Icon(Icons.my_location),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (!_isTracking) _buildSearch(context),
+                const SizedBox(height: 12),
+                FloatingActionButton.small(
+                  heroTag: 'locate',
+                  onPressed: _locateMe,
+                  tooltip: 'Mi ubicación',
+                  child: const Icon(Icons.my_location),
+                ),
+              ],
             ),
           ),
           Positioned(
@@ -208,6 +257,64 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Widget _buildSearch(BuildContext context) {
+    final results = _results;
+    return Column(
+      children: [
+        SearchBar(
+          controller: _searchController,
+          hintText: 'Buscar parada o dirección',
+          leading: const Icon(Icons.search),
+          textInputAction: TextInputAction.search,
+          onSubmitted: _search,
+          trailing: [
+            if (_searching)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (_searchController.text.isNotEmpty || results != null)
+              IconButton(
+                icon: const Icon(Icons.clear),
+                tooltip: 'Borrar',
+                onPressed: () => setState(() {
+                  _searchController.clear();
+                  _results = null;
+                }),
+              ),
+          ],
+        ),
+        if (results != null && results.isNotEmpty)
+          Card(
+            margin: const EdgeInsets.only(top: 8),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: results.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, i) => ListTile(
+                  leading: const Icon(Icons.place_outlined),
+                  title: Text(results[i].name),
+                  subtitle: Text(
+                    results[i].address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => _selectPlace(results[i]),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildPanel(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final Widget content;
@@ -215,7 +322,9 @@ class _MapScreenState extends State<MapScreen> {
       content = const Row(children: [
         Icon(Icons.touch_app),
         SizedBox(width: 12),
-        Expanded(child: Text('Toca el mapa donde te vas a bajar.')),
+        Expanded(
+          child: Text('Busca tu parada arriba o toca el mapa donde te vas a bajar.'),
+        ),
       ]);
     } else if (_isTracking) {
       content = Column(

@@ -1,30 +1,25 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:alarm_movil/logic/arrival_checker.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:alarm_movil/main.dart';
+import 'package:latlong2/latlong.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  // ~0.001° de latitud equivale a ~111 m.
+  const stop = LatLng(4.6097, -74.0817);
+  final checker = ArrivalChecker(destination: stop, radiusMeters: 400);
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('no suena cuando el bus está lejos', () {
+    const far = LatLng(4.6197, -74.0817); // ~1,1 km
+    expect(checker.isArriving(far), isFalse);
+    expect(checker.distanceTo(far), closeTo(1106, 15));
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('suena al entrar en el radio', () {
+    const near = LatLng(4.6127, -74.0817); // ~330 m
+    expect(checker.isArriving(near), isTrue);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('formatea distancias', () {
+    expect(formatDistance(850.4), '850 m');
+    expect(formatDistance(2400), '2,4 km');
   });
 }

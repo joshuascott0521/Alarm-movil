@@ -29,14 +29,14 @@ Guarda tus paradas frecuentes con ⭐ para elegirlas con un toque; las
 
 | Necesidad | Librería |
 | --- | --- |
-| Mapa | `flutter_map` con capas de CARTO (claro/oscuro) sobre OpenStreetMap |
+| Mapa | `flutter_map` con mapas de OpenStreetMap (filtro oscuro en modo oscuro) |
 | Animaciones del mapa | `flutter_map_animations` |
 | Buscar direcciones | Photon (OpenStreetMap), sin API key |
 | GPS en segundo plano | `geolocator` (servicio en primer plano en Android) |
 | Alarma | `flutter_ringtone_player` + `flutter_local_notifications` |
 | Paradas guardadas | `shared_preferences` |
 
-> Las capas de CARTO y Photon son gratuitas para uso personal/no comercial.
+> Los mapas de OpenStreetMap y Photon son gratuitos y sin API key, para uso moderado.
 > Antes de publicar la app en tiendas, cambia el proveedor de mapas en
 > `lib/config/map_style.dart` por uno con API key (MapTiler, Stadia Maps o
 > Mapbox).

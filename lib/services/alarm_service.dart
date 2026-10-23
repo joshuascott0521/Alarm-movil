@@ -12,7 +12,7 @@ class AlarmService {
   Future<void> init() async {
     await _notifications.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('ic_stat_bajate'),
         iOS: DarwinInitializationSettings(),
       ),
     );
@@ -28,7 +28,7 @@ class AlarmService {
     await _ringtone.playAlarm(looping: true, asAlarm: true);
     await _notifications.show(
       id: 1,
-      title: '¡Ya casi llegas!',
+      title: '¡Bájate! Ya casi llegas',
       body: body,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(

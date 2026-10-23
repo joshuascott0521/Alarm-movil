@@ -32,22 +32,22 @@ jobs:
       - name: Compilar APK
         run: |
           flutter build apk --release --build-number=${{ github.run_number }}
-          cp build/app/outputs/flutter-apk/app-release.apk alarma-de-parada.apk
+          cp build/app/outputs/flutter-apk/app-release.apk bajate.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: alarma-de-parada-apk
-          path: alarma-de-parada.apk
+          name: bajate-apk
+          path: bajate.apk
 
       - name: Publicar versión descargable
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Alarma de parada (build ${{ github.run_number }})
+          name: Bájate (build ${{ github.run_number }})
           target_commitish: ${{ github.sha }}
           make_latest: true
-          files: alarma-de-parada.apk
+          files: bajate.apk
           body: |
             Abre este enlace desde tu celular Android, descarga
-            `alarma-de-parada.apk` y ábrelo para instalar
+            `bajate.apk` y ábrelo para instalar
             (permite "instalar apps de origen desconocido" si te lo pide).

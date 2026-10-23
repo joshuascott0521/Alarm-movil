@@ -29,25 +29,39 @@ Guarda tus paradas frecuentes con ⭐ para elegirlas con un toque; las
 
 | Necesidad | Librería |
 | --- | --- |
-| Mapa | `flutter_map` con capas de CARTO (claro/oscuro) sobre OpenStreetMap |
-| Animaciones del mapa | `flutter_map_animations` |
+| Mapa | `google_maps_flutter` (Google Maps, con modo oscuro) |
 | Buscar direcciones | Photon (OpenStreetMap), sin API key |
 | GPS en segundo plano | `geolocator` (servicio en primer plano en Android) |
 | Alarma | `flutter_ringtone_player` + `flutter_local_notifications` |
 | Paradas guardadas | `shared_preferences` |
 
-> Las capas de CARTO y Photon son gratuitas para uso personal/no comercial.
-> Antes de publicar la app en tiendas, cambia el proveedor de mapas en
-> `lib/config/map_style.dart` por uno con API key (MapTiler, Stadia Maps o
-> Mapbox).
+## Clave de Google Maps
+
+El mapa necesita una clave de API de Google Maps. **No se sube al
+repositorio.**
+
+1. En [Google Cloud Console](https://console.cloud.google.com/) crea un
+   proyecto, asocia una cuenta de facturación y activa **Maps SDK for
+   Android** (y **Maps SDK for iOS** si compilas para iPhone).
+2. En *APIs y servicios → Credenciales* crea una clave de API y
+   restríngela a esos SDK y a la app Android `com.alarmmovil.alarm_movil`
+   con la huella SHA-1 de la llave con la que firmas el APK
+   (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`).
+3. Ponla donde corresponda:
+   - **Android:** en `android/local.properties` agrega `MAPS_API_KEY=tu_clave`.
+   - **iOS:** crea `ios/Flutter/Secrets.xcconfig` con `MAPS_API_KEY=tu_clave`.
+   - **GitHub Actions:** crea el secreto `MAPS_API_KEY` en
+     *Settings → Secrets and variables → Actions*.
+
+Sin la clave la app abre, pero el mapa se ve gris.
 
 ## Estructura
 
 - `lib/config/brand.dart` — nombre, lema y color de la marca
-- `lib/config/map_style.dart` — proveedor y estilo del mapa
+- `lib/config/map_style.dart` — estilo oscuro del mapa
 - `lib/screens/map_screen.dart` — pantalla principal (búsqueda, destino, viaje)
 - `lib/screens/alarm_screen.dart` — pantalla de alarma
-- `lib/widgets/` — marcadores del mapa y bienvenida
+- `lib/widgets/` — pin de la parada y bienvenida
 - `lib/logic/arrival_checker.dart` — distancia, llegada y tiempo estimado
 - `lib/services/` — GPS, alarma, búsqueda y paradas guardadas
 

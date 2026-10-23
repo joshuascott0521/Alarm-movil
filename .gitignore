@@ -50,3 +50,6 @@ app.*.map.json
 # Salidas de compilación locales
 *.apk
 /android/build/
+
+# Claves de API (no subir)
+/ios/Flutter/Secrets.xcconfig

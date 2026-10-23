@@ -1,10 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_animations/flutter_map_animations.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
 
 import '../config/map_style.dart';
@@ -43,11 +43,15 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+class _MapScreenState extends State<MapScreen> {
   // Centro inicial mientras se obtiene la ubicación real.
-  static const _fallbackCenter = LatLng(4.6097, -74.0817);
+  static const _fallbackCenter = gm.LatLng(4.6097, -74.0817);
 
-  late final _map = AnimatedMapController(vsync: this);
+  gm.GoogleMapController? _map;
+  gm.BitmapDescriptor? _stopIcon;
+  Color? _stopIconColor;
+  bool _locationAllowed = false;
+  double _panelHeight = 0;
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   Timer? _debounce;
@@ -56,7 +60,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _searchFailed = false;
 
   LatLng? _myPosition;
-  double? _heading;
   StreamSubscription<Position>? _watching;
 
   Place? _destination;
@@ -78,13 +81,25 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // El pin se dibuja como imagen con el color del tema actual.
+    final color = Theme.of(context).colorScheme.primary;
+    if (color == _stopIconColor) return;
+    _stopIconColor = color;
+    stopMarkerIcon(color, MediaQuery.devicePixelRatioOf(context)).then((icon) {
+      if (mounted) setState(() => _stopIcon = icon);
+    });
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
     _watching?.cancel();
     _tracking?.cancel();
     _searchController.dispose();
     _searchFocus.dispose();
-    _map.dispose();
+    _map?.dispose();
     super.dispose();
   }
 
@@ -100,7 +115,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   Future<bool> _checkPermission() async {
     final issue = await widget.location.ensurePermission();
-    if (issue == null) return true;
+    if (issue == null) {
+      if (!_locationAllowed && mounted) setState(() => _locationAllowed = true);
+      return true;
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(issue.message),
@@ -120,7 +138,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final pos = _myPosition ?? await widget.location.currentPosition();
     if (pos == null || !mounted) return;
     setState(() => _myPosition = pos);
-    _map.animateTo(dest: pos, zoom: 16);
+    _moveTo(pos, 16);
     _startWatching();
   }
 
@@ -135,11 +153,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   void _updateMyPosition(Position p) {
-    setState(() {
-      _myPosition = LatLng(p.latitude, p.longitude);
-      // El rumbo solo es fiable si nos estamos moviendo.
-      _heading = p.speed > 1 ? p.heading : null;
-    });
+    setState(() => _myPosition = LatLng(p.latitude, p.longitude));
   }
 
   // --- Búsqueda ------------------------------------------------------------
@@ -189,10 +203,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _clearSearch();
     HapticFeedback.selectionClick();
     setState(() => _destination = place);
-    _map.animateTo(dest: place.point, zoom: 16);
+    _moveTo(place.point, 16);
   }
 
-  Future<void> _onMapTap(TapPosition _, LatLng point) async {
+  Future<void> _onMapTap(gm.LatLng tapped) async {
+    final point = _fromGm(tapped);
     if (_searchFocus.hasFocus) {
       _searchFocus.unfocus();
       return;
@@ -271,13 +286,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final me = _myPosition;
     final destination = _destination;
     if (me == null || destination == null) return;
-    _map.animatedFitCamera(
-      cameraFit: CameraFit.coordinates(
-        coordinates: [me, destination.point],
-        padding: const EdgeInsets.fromLTRB(60, 120, 60, 360),
-        maxZoom: 17,
+    final bounds = gm.LatLngBounds(
+      southwest: gm.LatLng(
+        math.min(me.latitude, destination.point.latitude),
+        math.min(me.longitude, destination.point.longitude),
+      ),
+      northeast: gm.LatLng(
+        math.max(me.latitude, destination.point.latitude),
+        math.max(me.longitude, destination.point.longitude),
       ),
     );
+    _map?.animateCamera(gm.CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
   void _onTripPosition(Position p) {
@@ -349,6 +368,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _startWatching();
   }
 
+  gm.LatLng _toGm(LatLng p) => gm.LatLng(p.latitude, p.longitude);
+  LatLng _fromGm(gm.LatLng p) => LatLng(p.latitude, p.longitude);
+
+  void _moveTo(LatLng point, double zoom) =>
+      _map?.animateCamera(gm.CameraUpdate.newLatLngZoom(_toGm(point), zoom));
+
   void _showMessage(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -364,55 +389,60 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return Scaffold(
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _map.mapController,
-            options: MapOptions(
-              initialCenter: _fallbackCenter,
-              initialZoom: 12,
-              onTap: _onMapTap,
+          gm.GoogleMap(
+            initialCameraPosition: const gm.CameraPosition(
+              target: _fallbackCenter,
+              zoom: 12,
             ),
-            children: [
-              MapStyle.tiles(Theme.of(context).brightness),
+            onMapCreated: (controller) {
+              _map = controller;
+              final me = _myPosition;
+              if (me != null) _moveTo(me, 16);
+            },
+            onTap: _onMapTap,
+            style: Theme.of(context).brightness == Brightness.dark
+                ? MapStyle.dark
+                : null,
+            // Deja libre la zona bajo el panel para el logo y los encuadres.
+            padding: EdgeInsets.only(
+              top: MediaQuery.paddingOf(context).top + 72,
+              bottom: _panelHeight,
+            ),
+            myLocationEnabled: _locationAllowed,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: true,
+            circles: {
               if (destination != null)
-                CircleLayer(circles: [
-                  CircleMarker(
-                    point: destination.point,
-                    radius: _radius,
-                    useRadiusInMeter: true,
-                    color: scheme.primary.withValues(alpha: 0.15),
-                    borderColor: scheme.primary,
-                    borderStrokeWidth: 2,
-                  ),
-                ]),
+                gm.Circle(
+                  circleId: const gm.CircleId('zona'),
+                  center: _toGm(destination.point),
+                  radius: _radius,
+                  fillColor: scheme.primary.withValues(alpha: 0.15),
+                  strokeColor: scheme.primary,
+                  strokeWidth: 2,
+                ),
+            },
+            polylines: {
               if (_isTracking && me != null && destination != null)
-                PolylineLayer(polylines: [
-                  Polyline(
-                    points: [me, destination.point],
-                    color: scheme.primary,
-                    strokeWidth: 3,
-                    pattern: StrokePattern.dashed(segments: const [10, 8]),
-                  ),
-                ]),
-              MarkerLayer(markers: [
-                if (destination != null)
-                  Marker(
-                    key: ValueKey(destination.point),
-                    point: destination.point,
-                    width: 48,
-                    height: 58,
-                    alignment: Alignment.topCenter,
-                    child: const StopPin(),
-                  ),
-                if (me != null)
-                  Marker(
-                    point: me,
-                    width: 64,
-                    height: 64,
-                    child: LocationDot(heading: _heading),
-                  ),
-              ]),
-              MapStyle.attribution,
-            ],
+                gm.Polyline(
+                  polylineId: const gm.PolylineId('restante'),
+                  points: [_toGm(me), _toGm(destination.point)],
+                  color: scheme.primary,
+                  width: 4,
+                  patterns: [gm.PatternItem.dash(20), gm.PatternItem.gap(12)],
+                ),
+            },
+            markers: {
+              if (destination != null)
+                gm.Marker(
+                  markerId: const gm.MarkerId('parada'),
+                  position: _toGm(destination.point),
+                  icon: _stopIcon ?? gm.BitmapDescriptor.defaultMarker,
+                  infoWindow: gm.InfoWindow(title: destination.name),
+                ),
+            },
           ),
           SafeArea(
             child: Padding(
@@ -438,6 +468,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             Align(
               alignment: Alignment.bottomCenter,
               child: _BottomPanel(
+                onHeightChanged: (h) {
+                  if (h != _panelHeight) setState(() => _panelHeight = h);
+                },
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
                   child: _isTracking
@@ -762,12 +795,31 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
 /// Hoja inferior con esquinas redondeadas que aloja los paneles.
 class _BottomPanel extends StatelessWidget {
-  const _BottomPanel({required this.child});
+  const _BottomPanel({required this.child, required this.onHeightChanged});
 
   final Widget child;
+  final ValueChanged<double> onHeightChanged;
 
   @override
   Widget build(BuildContext context) {
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        _report(context);
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(child: _buildPanel(context)),
+    );
+  }
+
+  void _report(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) onHeightChanged(box.size.height);
+    });
+  }
+
+  Widget _buildPanel(BuildContext context) {
+    _report(context);
     return Material(
       elevation: 12,
       color: Theme.of(context).colorScheme.surface,

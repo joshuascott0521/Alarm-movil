@@ -75,5 +75,7 @@
 		<string>location</string>
 		<string>audio</string>
 	</array>
+	<key>GMSApiKey</key>
+	<string>$(MAPS_API_KEY)</string>
 </dict>
 </plist>
